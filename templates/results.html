@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Validation Results - Serial Number Validation System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .results-header {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            padding: 3rem 0;
+        }
+        .stat-card {
+            border: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+        .stat-card:hover {
+            transform: translateY(-3px);
+        }
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+        }
+        .preview-section {
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 0.375rem;
+        }
+        .duplicate-alert {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        .download-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 2rem;
+            text-align: center;
+        }
+        #preview-table {
+            font-size: 0.875rem;
+        }
+        #preview-table th {
+            background-color: #343a40;
+            color: white;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .validation-ok {
+            background-color: #d4edda !important;
+        }
+        .validation-not-ok {
+            background-color: #f8d7da !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-check-circle me-2"></i>
+                Validation System
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/">
+                    <i class="fas fa-home me-1"></i>
+                    New Validation
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Results Header -->
+    <section class="results-header">
+        <div class="container text-center">
+            <h1 class="display-4 mb-3">
+                <i class="fas fa-check-circle me-3"></i>
+                Validation Complete!
+            </h1>
+            <p class="lead">Your files have been successfully processed and validated</p>
+        </div>
+    </section>
+
+    <!-- Main Content -->
+    <div class="container mt-5">
+        <!-- Statistics Cards -->
+        <div class="row mb-5">
+            <div class="col-md-3 mb-3">
+                <div class="card stat-card text-center h-100">
+                    <div class="card-body">
+                        <i class="fas fa-list-ol fa-3x text-primary mb-3"></i>
+                        <div class="stat-number text-primary">{{ stats.total_records }}</div>
+                        <h5>Total Records</h5>
+                        <p class="text-muted">Records processed</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="card stat-card text-center h-100">
+                    <div class="card-body">
+                        <i class="fas fa-check fa-3x text-success mb-3"></i>
+                        <div class="stat-number text-success">{{ stats.ok_records }}</div>
+                        <h5>Valid Records</h5>
+                        <p class="text-muted">Passed validation</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="card stat-card text-center h-100">
+                    <div class="card-body">
+                        <i class="fas fa-times fa-3x text-danger mb-3"></i>
+                        <div class="stat-number text-danger">{{ stats.not_ok_records }}</div>
+                        <h5>Invalid Records</h5>
+                        <p class="text-muted">Failed validation</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="card stat-card text-center h-100">
+                    <div class="card-body">
+                        <i class="fas fa-percentage fa-3x text-info mb-3"></i>
+                        <div class="stat-number text-info">
+                            {% if stats.total_records > 0 %}
+                                {{ "%.1f"|format((stats.ok_records / stats.total_records) * 100) }}%
+                            {% else %}
+                                0%
+                            {% endif %}
+                        </div>
+                        <h5>Success Rate</h5>
+                        <p class="text-muted">Validation accuracy</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Duplicate Alerts -->
+        {% if stats.test_duplicates or stats.putaway_duplicates %}
+        <div class="row mb-4">
+            <div class="col-12">
+                <h3><i class="fas fa-exclamation-triangle text-warning me-2"></i>Duplicate Serial Numbers Found</h3>
+                
+                {% if stats.test_duplicates %}
+                <div class="duplicate-alert">
+                    <h5><i class="fas fa-copy me-2"></i>Duplicates in Test Records</h5>
+                    <p><strong>Serial Numbers:</strong> {{ stats.test_duplicates|join(', ') }}</p>
+                    <small class="text-muted">These serial numbers appear multiple times in your test records file.</small>
+                </div>
+                {% endif %}
+                
+                {% if stats.putaway_duplicates %}
+                <div class="duplicate-alert">
+                    <h5><i class="fas fa-copy me-2"></i>Duplicates in Putaway Records</h5>
+                    <p><strong>Serial Numbers:</strong> {{ stats.putaway_duplicates|join(', ') }}</p>
+                    <small class="text-muted">These serial numbers appear multiple times in your putaway records file.</small>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Download Section -->
+        <div class="row mb-5">
+            <div class="col-12">
+                <div class="download-section">
+                    <h3><i class="fas fa-download me-2"></i>Download Your Results</h3>
+                    <p class="mb-4">Your validation results are ready for download. The Excel file includes all validation results with duplicates listed at the end.</p>
+                    <a href="{{ url_for('download_file', filename=output_file) }}" class="btn btn-success btn-lg">
+                        <i class="fas fa-file-excel me-2"></i>
+                        Download Excel Report
+                    </a>
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            <i class="fas fa-info-circle me-1"></i>
+                            File includes auto-fitted columns and comprehensive validation details
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Preview -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h4 class="mb-0">
+                            <i class="fas fa-eye me-2"></i>
+                            Data Preview (First 20 Records)
+                        </h4>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="preview-section">
+                            {{ df_preview|safe }}
+                        </div>
+                    </div>
+                    <div class="card-footer text-muted">
+                        <small>
+                            <i class="fas fa-info-circle me-1"></i>
+                            Green rows indicate valid records, red rows indicate validation failures. 
+                            Download the full report to see all records and duplicates listed at the end.
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="row mt-4 mb-5">
+            <div class="col-12 text-center">
+                <a href="/" class="btn btn-primary me-3">
+                    <i class="fas fa-plus me-2"></i>
+                    Validate New Files
+                </a>
+                <a href="{{ url_for('download_file', filename=output_file) }}" class="btn btn-outline-success">
+                    <i class="fas fa-download me-2"></i>
+                    Download Again
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-dark text-light py-4">
+        <div class="container text-center">
+            <p>&copy; 2025 Serial Number Validation System. Built for efficient data validation.</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Style validation result rows
+            const table = document.getElementById('preview-table');
+            if (table) {
+                const rows = table.querySelectorAll('tbody tr');
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length > 0) {
+                        // Find the validation result column (usually the last column)
+                        const lastCell = cells[cells.length - 1];
+                        if (lastCell) {
+                            const text = lastCell.textContent.trim();
+                            if (text.startsWith('OK')) {
+                                row.classList.add('validation-ok');
+                            } else if (text.startsWith('NOT OK')) {
+                                row.classList.add('validation-not-ok');
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

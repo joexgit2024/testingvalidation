@@ -59,6 +59,25 @@
             border-radius: 5px;
             display: none;
         }
+        .quick-access-buttons {
+            margin-bottom: 0.5rem;
+        }
+        .quick-access-buttons .btn {
+            font-size: 0.875rem;
+        }
+        .url-input-section {
+            animation: slideDown 0.3s ease-in-out;
+        }
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                max-height: 0;
+            }
+            to {
+                opacity: 1;
+                max-height: 200px;
+            }
+        }
         .validation-info {
             background: #f8f9fa;
             border-left: 4px solid #007bff;
@@ -165,7 +184,7 @@
                     <div class="card-body text-center">
                         <div class="step-number">1</div>
                         <h5><i class="fas fa-upload me-2"></i>Upload Files</h5>
-                        <p>Drag & drop or click to upload your CEVA putaway records and test records Excel files</p>
+                        <p>Drag & drop files, click to browse, use SharePoint link, or load sample files</p>
                     </div>
                 </div>
             </div>
@@ -227,6 +246,21 @@
                                         <i class="fas fa-clipboard-check me-2"></i>
                                         Test Records
                                     </label>
+                                    
+                                    <!-- Quick Access Options -->
+                                    <div class="mb-2 quick-access-buttons">
+                                        <div class="btn-group w-100" role="group">
+                                            <button type="button" class="btn btn-outline-info btn-sm" id="load-from-sharepoint">
+                                                <i class="fas fa-cloud me-1"></i>
+                                                SharePoint Link
+                                            </button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" id="use-sample-file">
+                                                <i class="fas fa-file-alt me-1"></i>
+                                                Sample File
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
                                     <div class="upload-zone" id="test-zone">
                                         <div class="upload-content">
                                             <i class="fas fa-file-excel fa-3x text-info mb-3"></i>
@@ -240,6 +274,22 @@
                                             <i class="fas fa-check-circle text-success me-2"></i>
                                             <span class="file-name"></span>
                                         </div>
+                                    </div>
+                                    
+                                    <!-- URL Input for SharePoint (initially hidden) -->
+                                    <div class="mt-2 url-input-section" id="url-input-section" style="display: none;">
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" id="sharepoint-url" 
+                                                   placeholder="SharePoint URL will be auto-filled...">
+                                            <button class="btn btn-info" type="button" id="load-url-btn">
+                                                <i class="fas fa-external-link-alt me-1"></i>
+                                                Open
+                                            </button>
+                                        </div>
+                                        <small class="text-muted">
+                                            <i class="fas fa-info-circle me-1"></i>
+                                            Click "Open" to go to SharePoint, download the file, then drag it back here
+                                        </small>
                                     </div>
                                 </div>
                             </div>
@@ -376,6 +426,126 @@
                 });
             });
 
+            // Handle SharePoint and sample file buttons
+            document.getElementById('load-from-sharepoint').addEventListener('click', function() {
+                const urlSection = document.getElementById('url-input-section');
+                const urlInput = document.getElementById('sharepoint-url');
+                
+                if (urlSection.style.display === 'none') {
+                    urlSection.style.display = 'block';
+                    urlInput.value = 'https://365andrew-my.sharepoint.com/personal/george_yap_andrew_com/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fgeorge%5Fyap%5Fandrew%5Fcom%2FDocuments%2FAUD1%20Test%20Log';
+                    this.classList.add('active');
+                    this.innerHTML = '<i class="fas fa-times me-1"></i>Cancel';
+                } else {
+                    urlSection.style.display = 'none';
+                    this.classList.remove('active');
+                    this.innerHTML = '<i class="fas fa-cloud me-1"></i>SharePoint Link';
+                }
+            });
+
+            document.getElementById('use-sample-file').addEventListener('click', function() {
+                // Try to load sample file from server
+                fetch('/sample-file')
+                    .then(response => {
+                        if (response.ok) {
+                            return response.blob();
+                        } else {
+                            throw new Error('Sample file not available');
+                        }
+                    })
+                    .then(blob => {
+                        // Create a file object from the blob
+                        const file = new File([blob], 'Sample_Test_Records.xlsx', {
+                            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                        });
+                        
+                        // Set the file to the input
+                        const dt = new DataTransfer();
+                        dt.items.add(file);
+                        document.getElementById('test_file').files = dt.files;
+                        
+                        // Trigger change event
+                        const event = new Event('change', { bubbles: true });
+                        document.getElementById('test_file').dispatchEvent(event);
+                        
+                        // Show success message
+                        showToast('Sample file loaded successfully!', 'success');
+                    })
+                    .catch(error => {
+                        showToast('Sample file not available. Please upload your own test records file.', 'warning');
+                    });
+            });
+
+            document.getElementById('load-url-btn').addEventListener('click', function() {
+                const url = document.getElementById('sharepoint-url').value;
+                if (url.trim()) {
+                    // Open SharePoint in new tab
+                    window.open(url, '_blank');
+                    showToast('SharePoint opened in new tab. Download the file and drag it back here!', 'info');
+                } else {
+                    showToast('Please enter a SharePoint URL', 'warning');
+                }
+            });
+
+            function showSharePointInstructions(url) {
+                const modal = `
+                    <div class="modal fade" id="sharepointModal" tabindex="-1">
+                        <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">
+                                        <i class="fas fa-cloud me-2"></i>
+                                        SharePoint File Access
+                                    </h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <div class="alert alert-info">
+                                        <i class="fas fa-info-circle me-2"></i>
+                                        <strong>Due to SharePoint security restrictions, please follow these steps:</strong>
+                                    </div>
+                                    <ol class="list-group list-group-numbered">
+                                        <li class="list-group-item">
+                                            <strong>Open SharePoint:</strong>
+                                            <br><a href="${url}" target="_blank" class="btn btn-sm btn-outline-primary mt-1">
+                                                <i class="fas fa-external-link-alt me-1"></i>
+                                                Open SharePoint Link
+                                            </a>
+                                        </li>
+                                        <li class="list-group-item">
+                                            <strong>Download the file:</strong> Find "Test Records.xlsx" and click Download
+                                        </li>
+                                        <li class="list-group-item">
+                                            <strong>Upload here:</strong> Drag and drop the downloaded file into the Test Records zone
+                                        </li>
+                                    </ol>
+                                    <div class="alert alert-warning mt-3">
+                                        <i class="fas fa-exclamation-triangle me-2"></i>
+                                        <strong>Alternative:</strong> For future automation, consider setting up SharePoint API access with proper authentication.
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Remove existing modal if any
+                const existingModal = document.getElementById('sharepointModal');
+                if (existingModal) {
+                    existingModal.remove();
+                }
+                
+                // Add modal to body
+                document.body.insertAdjacentHTML('beforeend', modal);
+                
+                // Show modal
+                const modalElement = new bootstrap.Modal(document.getElementById('sharepointModal'));
+                modalElement.show();
+            }
+
             function handleFileSelection(input) {
                 const uploadZone = input.closest('.upload-zone');
                 const fileInfo = uploadZone.querySelector('.file-info');
@@ -416,6 +586,46 @@
                     submitBtn.classList.add('btn-primary');
                     submitBtn.innerHTML = '<i class="fas fa-upload me-2"></i>Select Both Files First';
                 }
+            }
+
+            function showToast(message, type = 'info') {
+                const toastId = 'toast-' + Date.now();
+                const toastHtml = `
+                    <div class="toast align-items-center text-bg-${type} border-0" id="${toastId}" role="alert">
+                        <div class="d-flex">
+                            <div class="toast-body">
+                                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'warning' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+                                ${message}
+                            </div>
+                            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                        </div>
+                    </div>
+                `;
+                
+                // Create toast container if it doesn't exist
+                let toastContainer = document.getElementById('toast-container');
+                if (!toastContainer) {
+                    toastContainer = document.createElement('div');
+                    toastContainer.id = 'toast-container';
+                    toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+                    toastContainer.style.zIndex = '1055';
+                    document.body.appendChild(toastContainer);
+                }
+                
+                // Add toast to container
+                toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+                
+                // Show toast
+                const toastElement = new bootstrap.Toast(document.getElementById(toastId), {
+                    autohide: true,
+                    delay: 3000
+                });
+                toastElement.show();
+                
+                // Remove toast element after it's hidden
+                document.getElementById(toastId).addEventListener('hidden.bs.toast', function() {
+                    this.remove();
+                });
             }
 
             // Prevent default drag behaviors on the document

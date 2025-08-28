@@ -18,6 +18,8 @@ A comprehensive web application for validating serial numbers against putaway re
 
 ### 🎨 User Experience
 - **Drag & Drop Upload**: Simply drag Excel files into upload zones
+- **SharePoint Integration**: Quick access to SharePoint files with one-click workflow
+- **Sample File Loading**: Load demonstration files for testing
 - **Web-based Interface**: Modern, responsive design
 - **Real-time Feedback**: Visual indicators for file selection and validation progress
 - **Cross-platform**: Works on Windows, macOS, and Linux
@@ -84,7 +86,11 @@ Both Excel files must contain these columns:
 
 ### Step 1: Upload Files
 1. Open the web application
-2. **Drag and drop** Excel files into upload zones, OR click to browse
+2. **Multiple upload options**:
+   - **Drag and drop** Excel files into upload zones
+   - **Click** zones to browse for files
+   - **SharePoint Link** button for quick access to your SharePoint files
+   - **Sample File** button to load demonstration data
 3. Select CEVA putaway records file (left zone)
 4. Select test records file (right zone)
 5. Button turns green when both files are ready

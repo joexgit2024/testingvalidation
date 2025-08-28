@@ -139,6 +139,32 @@ def process_validation(putaway_file, test_file):
 def index():
     return render_template('index.html')
 
+@app.route('/sharepoint-info')
+def sharepoint_info():
+    """Provide information about SharePoint integration"""
+    return jsonify({
+        'status': 'info',
+        'message': 'SharePoint direct access requires authentication setup',
+        'instructions': [
+            'Open the SharePoint link in a new tab',
+            'Download the "Test Records.xlsx" file',
+            'Return here and drag/drop the downloaded file'
+        ],
+        'alternative': 'Consider setting up SharePoint API with proper authentication for automation'
+    })
+
+@app.route('/sample-file')
+def get_sample_file():
+    """Provide a sample test file if available"""
+    sample_path = os.path.join('input', 'Test Records.xlsx')
+    if os.path.exists(sample_path):
+        return send_file(sample_path, as_attachment=True, download_name='Sample_Test_Records.xlsx')
+    else:
+        return jsonify({
+            'status': 'error',
+            'message': 'Sample file not available. Please upload your own test records file.'
+        }), 404
+
 @app.route('/upload', methods=['POST'])
 def upload_files():
     if 'putaway_file' not in request.files or 'test_file' not in request.files:

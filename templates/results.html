@@ -169,16 +169,30 @@
         <div class="row mb-5">
             <div class="col-12">
                 <div class="download-section">
-                    <h3><i class="fas fa-download me-2"></i>Download Your Results</h3>
-                    <p class="mb-4">Your validation results are ready for download. The Excel file includes all validation results with duplicates listed at the end.</p>
-                    <a href="{{ url_for('download_file', filename=output_file) }}" class="btn btn-success btn-lg">
-                        <i class="fas fa-file-excel me-2"></i>
-                        Download Excel Report
-                    </a>
+                    <h3><i class="fas fa-download me-2"></i>Download & Share Your Results</h3>
+                    <p class="mb-4">Your validation results are ready for download and sharing. The Excel file includes filtered columns and a summary sheet with statistics.</p>
+                    
+                    <div class="d-flex flex-wrap gap-3 justify-content-center">
+                        <a href="{{ url_for('download_file', filename=output_file) }}" class="btn btn-success btn-lg">
+                            <i class="fas fa-file-excel me-2"></i>
+                            Download Excel Report
+                        </a>
+                        
+                        <button type="button" class="btn btn-primary btn-lg" id="send-email-btn">
+                            <i class="fas fa-paper-plane me-2"></i>
+                            Send Email Report
+                        </button>
+                    </div>
+                    
                     <div class="mt-3">
                         <small class="text-muted">
                             <i class="fas fa-info-circle me-1"></i>
-                            File includes auto-fitted columns and comprehensive validation details
+                            File includes filtered columns, summary sheet, and comprehensive validation details
+                        </small>
+                        <br>
+                        <small class="text-muted">
+                            <i class="fas fa-paper-plane me-1"></i>
+                            Email will be sent automatically to validation team with Excel report attached
                         </small>
                     </div>
                 </div>
@@ -256,7 +270,312 @@
                     }
                 });
             }
+            
+            // Handle email sending
+            document.getElementById('send-email-btn').addEventListener('click', function() {
+                sendEmailReport();
+            });
         });
+        
+        function sendEmailReport() {
+            const emailBtn = document.getElementById('send-email-btn');
+            const originalText = emailBtn.innerHTML;
+            
+            // Show loading state
+            emailBtn.disabled = true;
+            emailBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Sending Email...';
+            
+            // Prepare email data
+            const emailData = {
+                output_file: '{{ output_file }}',
+                stats: {
+                    total_records: {{ stats.total_records }},
+                    ok_records: {{ stats.ok_records }},
+                    not_ok_records: {{ stats.not_ok_records }},
+                    test_duplicates: {{ stats.test_duplicates|tojson }},
+                    putaway_duplicates: {{ stats.putaway_duplicates|tojson }}
+                }
+            };
+            
+            // Send email request
+            fetch('/send-email', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(emailData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Reset button
+                emailBtn.disabled = false;
+                emailBtn.innerHTML = originalText;
+                
+                if (data.status === 'success') {
+                    // Email sent successfully
+                    showToast(`Email sent successfully to ${data.sent_to}!`, 'success');
+                    showEmailSentModal(data);
+                } else if (data.status === 'partial_success') {
+                    // Fallback to manual attachment
+                    window.location.href = data.mailto_url;
+                    showToast('Opening Outlook... Please manually attach the Excel file.', 'info');
+                    showEmailInstructionsModal(data);
+                } else {
+                    showToast(data.message || 'Error preparing email', 'danger');
+                }
+            })
+            .catch(error => {
+                // Reset button
+                emailBtn.disabled = false;
+                emailBtn.innerHTML = originalText;
+                showToast('Error preparing email: ' + error.message, 'danger');
+            });
+        }
+        
+        function showEmailInstructionsModal(data) {
+            const isManualAttachment = data.status === 'partial_success';
+            const modal = `
+                <div class="modal fade" id="emailInstructionsModal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">
+                                    <i class="fas fa-envelope me-2"></i>
+                                    ${isManualAttachment ? 'Manual Attachment Required' : 'Email Instructions'}
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                ${isManualAttachment ? 
+                                    `<div class="alert alert-warning">
+                                        <i class="fas fa-exclamation-triangle me-2"></i>
+                                        Automatic attachment failed. Please follow these steps:
+                                    </div>
+                                    
+                                    <ol class="mb-3">
+                                        <li>Check that Outlook opened with the email template</li>
+                                        <li>Download the Excel report using the button below</li>
+                                        <li>Attach the downloaded Excel file to the email in Outlook</li>
+                                        <li>Review the email content and send when ready</li>
+                                    </ol>` :
+                                    `<div class="alert alert-success">
+                                        <i class="fas fa-check-circle me-2"></i>
+                                        Email has been opened in Outlook with the file already attached!
+                                    </div>
+                                    
+                                    <p>The email is ready to send. Please review the content and send when ready.</p>`
+                                }
+                                
+                                <div class="alert alert-secondary">
+                                    <strong>File:</strong> ${data.attachment_name}<br>
+                                    ${data.file_path ? `<strong>File location:</strong> <code>${data.file_path}</code>` : ''}
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                ${isManualAttachment ? 
+                                    `<a href="{{ url_for('download_file', filename=output_file) }}" class="btn btn-success">
+                                        <i class="fas fa-download me-1"></i>
+                                        Download Excel File
+                                    </a>` : ''
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('emailInstructionsModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modal);
+            
+            // Show modal
+            const modalElement = new bootstrap.Modal(document.getElementById('emailInstructionsModal'));
+            modalElement.show();
+        }
+        
+        function showEmailSentModal(data) {
+            const modal = `
+                <div class="modal fade" id="emailSentModal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header bg-success text-white">
+                                <h5 class="modal-title">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    Email Sent Successfully!
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="alert alert-success">
+                                    <i class="fas fa-envelope me-2"></i>
+                                    Your validation report has been sent successfully with the Excel file attached.
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6><i class="fas fa-user me-2"></i>Sent To:</h6>
+                                        <p class="mb-2"><strong>${data.sent_to}</strong></p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6><i class="fas fa-users me-2"></i>CC Recipients:</h6>
+                                        <ul class="list-unstyled mb-2">
+                                            ${data.cc_recipients.map(email => `<li>${email}</li>`).join('')}
+                                        </ul>
+                                    </div>
+                                </div>
+                                
+                                <div class="alert alert-info mt-3">
+                                    <strong>Attachment:</strong> ${data.attachment_name}<br>
+                                    <strong>Subject:</strong> Antenna testing SN validation report - ${new Date().toISOString().split('T')[0]}
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-success" data-bs-dismiss="modal">
+                                    <i class="fas fa-check me-1"></i>
+                                    Great!
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('emailSentModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modal);
+            
+            // Show modal
+            const modalElement = new bootstrap.Modal(document.getElementById('emailSentModal'));
+            modalElement.show();
+        }
+        
+        function showEmailPreviewModal(data) {
+            const modal = `
+                <div class="modal fade" id="emailPreviewModal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">
+                                    <i class="fas fa-envelope me-2"></i>
+                                    Email Configuration Required
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="alert alert-info">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    <strong>Email functionality is configured but requires SMTP setup.</strong>
+                                </div>
+                                
+                                <h6>Email Preview:</h6>
+                                <ul class="list-group">
+                                    <li class="list-group-item">
+                                        <strong>To:</strong> ${data.preview.to}
+                                    </li>
+                                    <li class="list-group-item">
+                                        <strong>CC:</strong> ${data.preview.cc.join('; ')}
+                                    </li>
+                                    <li class="list-group-item">
+                                        <strong>Subject:</strong> ${data.preview.subject}
+                                    </li>
+                                    <li class="list-group-item">
+                                        <strong>Attachment:</strong> 
+                                        ${data.preview.has_attachment ? 
+                                            '<span class="text-success"><i class="fas fa-check me-1"></i>' + data.preview.attachment_name + '</span>' : 
+                                            '<span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>No attachment found</span>'
+                                        }
+                                    </li>
+                                </ul>
+                                
+                                <div class="alert alert-warning mt-3">
+                                    <h6><i class="fas fa-cog me-2"></i>To enable email sending:</h6>
+                                    <ol>
+                                        <li>Configure SMTP settings in app.py</li>
+                                        <li>Set up email authentication</li>
+                                        <li>Uncomment the email sending code</li>
+                                    </ol>
+                                </div>
+                                
+                                <div class="mt-3">
+                                    <p><strong>Current workaround:</strong> Download the Excel file and email it manually to the recipients.</p>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                <a href="{{ url_for('download_file', filename=output_file) }}" class="btn btn-success">
+                                    <i class="fas fa-download me-1"></i>
+                                    Download for Manual Sending
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('emailPreviewModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modal);
+            
+            // Show modal
+            const modalElement = new bootstrap.Modal(document.getElementById('emailPreviewModal'));
+            modalElement.show();
+        }
+        
+        function showToast(message, type = 'info') {
+            const toastId = 'toast-' + Date.now();
+            const toastHtml = `
+                <div class="toast align-items-center text-bg-${type} border-0" id="${toastId}" role="alert">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'danger' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+                            ${message}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                    </div>
+                </div>
+            `;
+            
+            // Create toast container if it doesn't exist
+            let toastContainer = document.getElementById('toast-container');
+            if (!toastContainer) {
+                toastContainer = document.createElement('div');
+                toastContainer.id = 'toast-container';
+                toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+                toastContainer.style.zIndex = '1055';
+                document.body.appendChild(toastContainer);
+            }
+            
+            // Add toast to container
+            toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+            
+            // Show toast
+            const toastElement = new bootstrap.Toast(document.getElementById(toastId), {
+                autohide: true,
+                delay: 4000
+            });
+            toastElement.show();
+            
+            // Remove toast element after it's hidden
+            document.getElementById(toastId).addEventListener('hidden.bs.toast', function() {
+                this.remove();
+            });
+        }
     </script>
 </body>
 </html>

@@ -1,17 +1,11 @@
 import os
+import subprocess
 import pandas as pd
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file, jsonify
-from werkzeug.utils import secure_filename
-from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.styles import Font, PatternFill, Alignment
 import tempfile
 from datetime import datetime
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-this'
@@ -71,6 +65,33 @@ def check_duplicates(df_test, df_putaway):
     putaway_duplicates = df_putaway[dup_putaway]['Serial Number'].tolist() if dup_putaway.any() else []
     
     return test_duplicates, putaway_duplicates
+
+
+def append_duplicate_summary_rows(df, test_duplicates, putaway_duplicates):
+    """Append human-readable duplicate summaries to the provided DataFrame."""
+
+    if not test_duplicates and not putaway_duplicates:
+        return df
+
+    summary_rows = []
+
+    # Empty spacer row to separate the summaries from data
+    empty_row = {column: '' for column in df.columns}
+    summary_rows.append(empty_row)
+
+    if test_duplicates:
+        summary = {column: '' for column in df.columns}
+        summary['Serial Number'] = 'DUPLICATES IN TEST RECORDS'
+        summary['Validation Result'] = f'Duplicate Serial Numbers found: {", ".join(map(str, test_duplicates))}'
+        summary_rows.append(summary)
+
+    if putaway_duplicates:
+        summary = {column: '' for column in df.columns}
+        summary['Serial Number'] = 'DUPLICATES IN PUTAWAY RECORDS'
+        summary['Validation Result'] = f'Duplicate Serial Numbers found: {", ".join(map(str, putaway_duplicates))}'
+        summary_rows.append(summary)
+
+    return pd.concat([df, pd.DataFrame(summary_rows)], ignore_index=True)
 
 def format_dates(df_merged):
     """Format date columns"""
@@ -254,31 +275,13 @@ def process_validation(putaway_file, test_file):
         # Format dates
         df_merged = format_dates(df_merged)
         
-        # Add duplicate information at the end
-        if test_duplicates or putaway_duplicates:
-            # Create summary rows for duplicates
-            summary_rows = []
-            
-            if test_duplicates:
-                summary = {col: '' for col in df_merged.columns}
-                summary['Serial Number'] = 'DUPLICATES IN TEST RECORDS'
-                summary['Validation Result'] = f'Duplicate Serial Numbers found: {", ".join(map(str, test_duplicates))}'
-                summary_rows.append(summary)
-            
-            if putaway_duplicates:
-                summary = {col: '' for col in df_merged.columns}
-                summary['Serial Number'] = 'DUPLICATES IN PUTAWAY RECORDS'
-                summary['Validation Result'] = f'Duplicate Serial Numbers found: {", ".join(map(str, putaway_duplicates))}'
-                summary_rows.append(summary)
-            
-            # Add empty row for separation
-            empty_row = {col: '' for col in df_merged.columns}
-            df_merged = pd.concat([df_merged, pd.DataFrame([empty_row] + summary_rows)], ignore_index=True)
-        
-        # Generate statistics
-        total_records = len(df_merged) - (2 if test_duplicates or putaway_duplicates else 0) - (1 if test_duplicates or putaway_duplicates else 0)  # Exclude summary rows
-        ok_records = len(df_merged[df_merged['Validation Result'].str.startswith('OK', na=False)])
-        not_ok_records = len(df_merged[df_merged['Validation Result'].str.startswith('NOT OK', na=False)])
+        # Generate statistics before adding any summary rows
+        total_records = len(df_merged)
+        ok_records = df_merged['Validation Result'].str.startswith('OK', na=False).sum()
+        not_ok_records = df_merged['Validation Result'].str.startswith('NOT OK', na=False).sum()
+
+        # Append duplicate information for readability in the exported file
+        df_merged = append_duplicate_summary_rows(df_merged, test_duplicates, putaway_duplicates)
         
         stats = {
             'total_records': total_records,
@@ -388,87 +391,42 @@ def download_file(filename):
         flash(f'Error downloading file: {str(e)}')
         return redirect(url_for('index'))
 
-def create_email_body(stats):
-    """Create HTML email body with validation statistics"""
-    
-    success_rate = (stats['ok_records'] / stats['total_records'] * 100) if stats['total_records'] > 0 else 0
-    
-    html_body = f"""
-    <html>
-    <head>
-        <style>
-            body {{ font-family: Arial, sans-serif; }}
-            .header {{ background-color: #366092; color: white; padding: 20px; text-align: center; }}
-            .stats-table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
-            .stats-table th, .stats-table td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
-            .stats-table th {{ background-color: #f2f2f2; }}
-            .success {{ color: #28a745; }}
-            .warning {{ color: #ffc107; }}
-            .danger {{ color: #dc3545; }}
-            .footer {{ margin-top: 30px; padding: 20px; background-color: #f8f9fa; }}
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h2>Serial Number Validation Report</h2>
-            <p>Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-        </div>
-        
-        <div style="padding: 20px;">
-            <h3>Validation Summary</h3>
-            <table class="stats-table">
-                <tr>
-                    <th>Metric</th>
-                    <th>Value</th>
-                </tr>
-                <tr>
-                    <td>Total Records Processed</td>
-                    <td><strong>{stats['total_records']}</strong></td>
-                </tr>
-                <tr>
-                    <td>Valid Records</td>
-                    <td><span class="success"><strong>{stats['ok_records']}</strong></span></td>
-                </tr>
-                <tr>
-                    <td>Invalid Records</td>
-                    <td><span class="danger"><strong>{stats['not_ok_records']}</strong></span></td>
-                </tr>
-                <tr>
-                    <td>Success Rate</td>
-                    <td><span class="{'success' if success_rate >= 95 else 'warning' if success_rate >= 85 else 'danger'}">
-                        <strong>{success_rate:.1f}%</strong></span></td>
-                </tr>
-            </table>
-            
-            <h3>Duplicate Analysis</h3>
-            <table class="stats-table">
-                <tr>
-                    <th>File Type</th>
-                    <th>Duplicate Count</th>
-                    <th>Serial Numbers</th>
-                </tr>
-                <tr>
-                    <td>Test Records</td>
-                    <td>{"<span class='warning'>" + str(len(stats['test_duplicates'])) + "</span>" if stats['test_duplicates'] else "<span class='success'>0</span>"}</td>
-                    <td>{', '.join(map(str, stats['test_duplicates'])) if stats['test_duplicates'] else 'None'}</td>
-                </tr>
-                <tr>
-                    <td>Putaway Records</td>
-                    <td>{"<span class='warning'>" + str(len(stats['putaway_duplicates'])) + "</span>" if stats['putaway_duplicates'] else "<span class='success'>0</span>"}</td>
-                    <td>{', '.join(map(str, stats['putaway_duplicates'])) if stats['putaway_duplicates'] else 'None'}</td>
-                </tr>
-            </table>
-            
-            <div class="footer">
-                <p><strong>Note:</strong> The complete validation report with detailed results is attached to this email.</p>
-                <p><em>This report was automatically generated by the Serial Number Validation System.</em></p>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    
-    return html_body
+
+def send_email_via_outlook(to_email, cc_emails, subject, body_text, attachment_path):
+    """Send an email via Outlook using a temporary PowerShell script."""
+
+    cc_string = ';'.join(cc_emails) if cc_emails else ''
+
+    powershell_script = f'''
+Add-Type -AssemblyName "Microsoft.Office.Interop.Outlook"
+$outlook = New-Object -ComObject Outlook.Application
+$mail = $outlook.CreateItem(0)
+$mail.To = "{to_email}"
+$mail.CC = "{cc_string}"
+$mail.Subject = "{subject}"
+$mail.Body = @"
+{body_text}
+"@
+$mail.Attachments.Add("{attachment_path}")
+$mail.Send()
+'''
+
+    script_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1', delete=False) as script_file:
+            script_file.write(powershell_script)
+            script_path = script_file.name
+
+        subprocess.run(
+            ['powershell.exe', '-ExecutionPolicy', 'Bypass', '-File', script_path],
+            check=True,
+            capture_output=True
+        )
+
+    finally:
+        if script_path and os.path.exists(script_path):
+            os.unlink(script_path)
 
 @app.route('/send-email', methods=['POST'])
 def send_email():
@@ -509,42 +467,15 @@ Joe"""
         file_path = os.path.join('output', output_file)
         full_file_path = os.path.abspath(file_path)
         
-        # Try to use Windows MAPI to create email with attachment
         try:
-            import subprocess
-            import urllib.parse
-            
-            # Create a PowerShell script to open Outlook with attachment
-            cc_string = ';'.join(cc_emails) if cc_emails else ''
-            
-            # Use PowerShell to create and send Outlook email with attachment
-            powershell_script = f'''
-Add-Type -AssemblyName "Microsoft.Office.Interop.Outlook"
-$outlook = New-Object -ComObject Outlook.Application
-$mail = $outlook.CreateItem(0)
-$mail.To = "{to_email}"
-$mail.CC = "{cc_string}"
-$mail.Subject = "{subject}"
-$mail.Body = @"
-{body_text}
-"@
-$mail.Attachments.Add("{full_file_path}")
-$mail.Send()
-'''
-            
-            # Write PowerShell script to temp file
-            import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1', delete=False) as f:
-                f.write(powershell_script)
-                ps_file = f.name
-            
-            # Execute PowerShell script
-            subprocess.run(['powershell.exe', '-ExecutionPolicy', 'Bypass', '-File', ps_file], 
-                         check=True, capture_output=True)
-            
-            # Clean up temp file
-            os.unlink(ps_file)
-            
+            send_email_via_outlook(
+                to_email=to_email,
+                cc_emails=cc_emails,
+                subject=subject,
+                body_text=body_text,
+                attachment_path=full_file_path
+            )
+
             return jsonify({
                 'status': 'success',
                 'message': 'Email sent successfully with attachment!',
@@ -552,7 +483,7 @@ $mail.Send()
                 'sent_to': to_email,
                 'cc_recipients': cc_emails
             })
-            
+
         except Exception as ps_error:
             # Fallback to mailto link if PowerShell approach fails
             import urllib.parse
